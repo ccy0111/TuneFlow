@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Persistent Local MP3 Playlist Player</title>
+    <!-- TailwindCSS CDN (optional) -->
+    <link rel="stylesheet" href="https://unpkg.com/tailwindcss@^3/dist/tailwind.min.css" />
+    <style>
+        body {
+            background: #0f172a;
+            color: #f1f5f9;
+        }
+    </style>
+</head>
+
+<body class="p-6">
+    <div id="root"></div>
+
+    <!-- React & ReactDOM CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- idb‑keyval: tiny IndexedDB helper (2 KB) -->
+    <script src="https://unpkg.com/idb-keyval@6/dist/idb-keyval-iife.min.js"></script>
+
+    <script type="text/javascript">
+        const { useState, useEffect, useRef } = React;
+        const {
+            get: idbGet,
+            set: idbSet,
+            del: idbDel,
+            keys: idbKeys,
+        } = idbKeyval;
+
+        /**
+         * 🎵 Persistent Local MP3 Player
+         * - 곡 Blob 데이터를 IndexedDB(idb-keyval)에 저장 → 브라우저 재시작 후에도 유지
+         * - 메타데이터(id, name, date)만 localStorage에 별도 저장 (빠른 리스트 렌더)
+         */
+        
+         // 주석 보고 읽어보센 이해 안되는 부분 있으면 연락하구
+        
+        function App() {
+
+            // state 변수 2개 각각 트랙과 현재 재생 음악 관리
+            // state 변수 이 문서 참조해보셈 https://ko.react.dev/reference/react/useState
+            
+            const [tracks, setTracks] = useState([]); // {id,name,date,url}
+            const [current, setCurrent] = useState(null);
+            const audioRef = useRef(null);
+
+            /* 초기 로드: 메타 + Blob 모두 복원 */
+            useEffect(() => {
+                (async () => {
+                    // meta : playlistMeta라는 로컬저장소에서 아이템을 얻어서 파싱한 데이터
+                    const meta = JSON.parse(localStorage.getItem("playlistMeta") || "[]");
+
+                    // Promise로 비동기 처리
+                    // meta를 매핑해서 indexed DB에서 id를 조회해 blob파일을 얻고 얻고, 해당 데이터의 URL을 받아옴
+                    const loaded = await Promise.all(
+                        meta.map(async (m) => {
+                            try {
+                                const blob = await idbGet(m.id);
+                                if (!blob) return null;
+                                return { ...m, url: URL.createObjectURL(blob) };
+                            } catch {
+                                return null;
+                            }
+                        })
+                    );
+                    // 이렇게 받아온 음악 URL을 tracks 변수로 세팅함 
+                    setTracks(loaded.filter(Boolean));
+                })();
+            }, []);
+            
+
+            /* helper: 메타데이터 저장 */
+            function persistMeta(list) {
+                localStorage.setItem(
+                    "playlistMeta",
+                    JSON.stringify(list.map(({ id, name, date }) => ({ id, name, date })))
+                );
+            }
+
+            /* 파일 추가 */
+            // e가 보통 event 발생 시 사용하는 객체인데 아마 입력 받은 파일을 의미하는 것 같음
+            async function addFiles(e) {
+                // "audio/"로 시작하는 파일을 필터링해서 배열로 만듦
+                const files = Array.from(e.target.files).filter((f) =>
+                    f.type.startsWith("audio/")
+                );
+
+                
+                const newItems = [];
+                
+                // 그렇게 만든 파일 배열(files)에서 각 파일을 db에 저장함
+                for (const f of files) {
+                    // id생성 (UUID)
+                    const id = crypto.randomUUID();
+                    // indexed db에 id랑 파일 저장 (f)
+                    await idbSet(id, f); // Blob 저장 (IndexedDB)
+
+                    // {id, name, date, url} 구조
+                    newItems.push({
+                        id,
+                        name: f.name,
+                        date: Date.now(),
+                        url: URL.createObjectURL(f),
+                    });
+                }
+
+                // 새 음악들을 추가했으니, track에도 다시 추가해줘야함
+                // merged : 기존의 tracks 변수 + 새로 추가된 음악 병합 (...이 배열의 []를 벗기는 용도로 쓰이는듯)
+                const merged = [...tracks, ...newItems];
+                setTracks(merged);
+                persistMeta(merged);
+                e.target.value = ""; // same file 재선택 허용
+            }
+
+            /* 재생 */
+            function play(id) {
+                // t : tracks에서 인자로 받은 id를 찾아서 저장
+                const t = tracks.find((x) => x.id === id);
+                if (!t) return;
+
+                // 현재 음악 (current 변수)를 id로 변경하고
+                // audioRef 객체에 t의 url을 저장한 뒤 실행
+                setCurrent(id);
+                if (audioRef.current) {
+                    audioRef.current.src = t.url;
+                    audioRef.current.play();
+                }
+            }
+
+            /* 삭제 */
+            // id를 인자로 받아서 tracks의 음악 중 같은 id를 필터링해 삭제해줌
+            async function remove(id) {
+                const filtered = tracks.filter((t) => t.id !== id);
+                setTracks(filtered);
+                persistMeta(filtered);
+
+                // 만약 현재 재생중인 음악이 삭제하려는 음악이면 ? 음악 정지
+                await idbDel(id);
+                if (id === current && audioRef.current) {
+                    audioRef.current.pause();
+                    setCurrent(null);
+                }
+            }
+
+            /* 모든 곡 삭제 (옵션) */
+            async function clearAll() {
+                const ks = await idbKeys();
+                await Promise.all(ks.map((k) => idbDel(k)));
+                setTracks([]);
+                persistMeta([]);
+                if (audioRef.current) audioRef.current.pause();
+            }
+
+            return (
+                <div className="max-w-xl mx-auto">
+                    <h1 className="text-2xl font-bold mb-4">로컬 오프라인 플레이리스트 🎶</h1>
+                    <input
+                        type="file"
+                        accept="audio/*"
+                        multiple
+                        onChange={addFiles}
+                        className="mb-4"
+                    />
+                    {tracks.length > 0 && (
+                        <button
+                            onClick={clearAll}
+                            className="mb-4 px-3 py-1 bg-red-700 rounded"
+                        >
+                            전체 삭제
+                        </button>
+                    )}
+
+                    {tracks.length === 0 ? (
+                        <p className="text-gray-400">추가된 곡이 없습니다.</p>
+                    ) : (
+                        <ul className="space-y-2">
+                            {tracks.map((t) => (
+                                <li
+                                    key={t.id}
+                                    className={`flex items-center justify-between bg-slate-800 p-2 rounded ${t.id === current ? "ring-2 ring-emerald-500" : ""
+                                        }`}
+                                >
+                                    <span className="truncate max-w-[60%]">{t.name}</span>
+                                    <div className="flex gap-2 shrink-0">
+                                        <button
+                                            className="px-2 py-1 bg-green-600 rounded"
+                                            onClick={() => play(t.id)}
+                                        >
+                                            재생
+                                        </button>
+                                        <button
+                                            className="px-2 py-1 bg-red-600 rounded"
+                                            onClick={() => remove(t.id)}
+                                        >
+                                            삭제
+                                        </button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+
+                    <audio ref={audioRef} controls className="w-full mt-4" />
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+</body>
+
+</html>
