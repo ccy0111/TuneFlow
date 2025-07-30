@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "music-metadata": "^11.7.3",
+    "node-id3": "^0.2.9",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
