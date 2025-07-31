@@ -1,5 +1,4 @@
 import { parseBlob } from "music-metadata"
-import 'node-id3'
 import { useState } from 'react'
 import './App.css'
 function App() {
@@ -31,7 +30,7 @@ function App() {
         const id = Date.now()
         const audio = f.slice()
         
-        let cover
+        let cover 
 
         if (common.picture?.length) {
           const pic = common.picture[0]
@@ -43,18 +42,19 @@ function App() {
           title:  common.title       ?? null,
           artist: common.artist      ?? null
         };
-        // 여기서 냅다 idbset({id, cover, audio, meta})
+
+        // for debug (잘 작동하는 중)
+        let coverURL = URL.createObjectURL(cover)
+        console.log({ id, coverURL, audio, meta })
+
+
         return { id, cover, audio, meta };
       })
     )
   }
-  
-  
-  return (    
-    <div>
-      hello, world !
-
-    </div>
+  return (
+    // for debug
+    <input type="file" accept="audio/*" multiple onChange={addMusics}></input>
   )
 }
 
