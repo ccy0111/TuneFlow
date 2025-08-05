@@ -1,20 +1,24 @@
 import { parseBlob } from "music-metadata"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import * as DB from "../db"
+import { MusicController } from "../music_controller/controller"
+import { Sidebar } from "../side/side"
 import './App.css'
 
 function App() {
-    const [count, setCount] = useState(0)  
+     const [count, setCount] = useState(0)  
   
      // 재생목록 전체를 관리하는 변수
      const [playlists, setPlaylists] = useState([])
+     
      // 현재 재생 중인 음악
      const [curMusic, setCurMusic] = useState(null)
+     
      // 현재 재생 목록 (최초 웹 실행 시는 null)
      const [curPlaylist, setCurPlaylist] = useState([])
 
      async function handleUpload(e) {
-    
+          
           const files = Array.from(e.target.files).filter((f) =>
               f.type.startsWith("audio/")
           );
@@ -23,7 +27,7 @@ function App() {
                files.map(async (f) => {
 
                     const {common} = await parseBlob(f)
-                    const audio = f.slice()
+                    const audio = f
                     
                     let cover = null
 
@@ -36,20 +40,44 @@ function App() {
                     const title   =  common.title                ?? null;
                     const artist  =  common.artist               ?? null;
                     
-                    return { cover, audio, lyrics, title, artist };
+                    
+                    let parsed_music = { cover, audio, lyrics, title, artist };
+                    
+                    let id = await DB.saveMusic(parsed_music);
+
+                    const music = { id, ...parsed_music }
+                    return music
                })
           )
           
-          // db에 추가하기
-          DB.saveMusics(newMusic)
-          // state 변수 업데이트 하기
+          // state 변수 업데이트 하기 
+          let cur_lists = { ...playlists } 
+          cur_lists[0] = { ...cur_lists[0], ...newMusic }
+          setPlaylists(cur_lists)
      }
 
+     // 음악 선택 and 재생
+     async function playMusic(id) {
+          const music = await DB.get_music(id)
+          setCurMusic(music)
+     }
+     
+     // 시작할 떄 음악 받아오기
+     useEffect(() => {
+          (async () => {
+               const arr = await DB.get_playlists();   // Promise → 배열
+               setPlaylists(arr ?? []);
+          })();
+     }, [])
+          
      return (
           // for debug
           <div>
                <input type="file" accept="audio/*" multiple onChange={handleUpload}></input>
                <button onClick={DB.resetDB}> 리셋버튼 </button>
+               <button onClick={()=> {console.log(playlists)}}> playlists </button>
+               <Sidebar playlists={playlists} playMusic={playMusic} />
+               <MusicController music = {curMusic}/>
           </div>
      );
 }
