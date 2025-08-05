@@ -1,6 +1,6 @@
 import { parseBlob } from "music-metadata"
 import { useState } from "react"
-import * as DB from "../db"
+import * as DB from "../db"
 import './App.css'
 
 function App() {
