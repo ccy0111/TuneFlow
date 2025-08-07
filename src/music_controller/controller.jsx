@@ -4,11 +4,10 @@ export function MusicController({ music }) {
      function test() {
           if (music) {
                
-               const srcc = URL.createObjectURL(music['audio'])
-               console.log(srcc)
+               const audioURL = URL.createObjectURL(music['audio'])
                return (
                     <div>
-                         <audio src={srcc} controls>
+                         <audio src={audioURL} controls autoPlay>
                          </audio>
                     </div>
                );
